@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ec2-LaunchTemplate-AutoScaling
+
+Parameters:
+  StaticIPforSSH:
+    Description: Static IP for SSH access
+    Type: String
+    Default: 127.0.0.1/32 
+  Ec2AutoscaleMinSize:
+    Description: AutoScalingGroup MinSize
+    Type: String
+    Default: '1'
+  Ec2AutoscaleMaxSize:
+    Description: AutoScalingGroup MaxSize
+    Type: String
+    Default: '3'
+  Ec2AutoscaleDesiredCapacity:
+    Description: AutoScalingGroup DesiredCapacity
+    Type: String
+    Default: '1'
+Resources:
+  Ec2InstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    DeletionPolicy: Delete
+    Properties:
+      LaunchTemplateName: '{{resolve:ssm:Ec2LaunchtemplateName}}' 
+      LaunchTemplateData:
+        SecurityGroupIds:
+          - !Ref 'Ec2SecurityGroupSSH'
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: 'CFN-ASG-TEST'
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: '{{resolve:ssm:Ec2LaunchtemplateName}}' 
+        InstanceInitiatedShutdownBehavior: terminate
+        KeyName: '{{resolve:ssm:Ec2InstanceKeyName}}'
+        ImageId: '{{resolve:ssm:Ec2ImageId}}'
+        InstanceType: t2.micro
+        UserData:
+          "Fn::Base64":
+            !Sub |
+              #!/bin/bash -xe
+              yum update -y aws-cfn-bootstrap
+              /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource Ec2InstanceAutoScalingGroup --region ${AWS::Region}
+
+  Ec2InstanceAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DeletionPolicy: Delete
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 100
+    Properties:
+      VPCZoneIdentifier:
+        - '{{resolve:ssm:VpcEc2Subnet1}}' 
+        - '{{resolve:ssm:VpcEc2Subnet2}}' 
+      MinSize: !Ref 'Ec2AutoscaleMinSize'
+      MaxSize: !Ref 'Ec2AutoscaleMaxSize'
+      DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
+      MixedInstancesPolicy:
+        InstancesDistribution:
+          OnDemandAllocationStrategy: prioritized
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: 10
+          SpotInstancePools: 2
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref 'Ec2InstanceLaunchTemplate'
+            Version: !GetAtt 'Ec2InstanceLaunchTemplate.LatestVersionNumber'
+          Overrides:
+            - InstanceType: t3.micro
+            - InstanceType: t2.micro
+  Ec2SecurityGroupSSH:
+    Type: AWS::EC2::SecurityGroup
+    DeletionPolicy: Delete
+    Properties:
+      VpcId: '{{resolve:ssm:VpcId}}' 
+      GroupDescription: allow SSH via static IP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref 'StaticIPforSSH'
+  PredictiveScalingPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    DeletionPolicy: Delete
+    Properties:
+      AutoScalingGroupName: !Ref Ec2InstanceAutoScalingGroup
+      PolicyType: PredictiveScaling
+      PredictiveScalingConfiguration:
+        MetricSpecifications:
+          - TargetValue: '70'
+            PredefinedMetricPairSpecification:
+              PredefinedMetricType: ASGCPUUtilization
+        Mode: ForecastOnly
