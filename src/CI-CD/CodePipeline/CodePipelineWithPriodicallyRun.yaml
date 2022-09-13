@@ -2,45 +2,65 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Pipeline for priodically build base image
 
 Parameters:
-  ECR1StRepoName:
-    Description: ECR Repository name for 1st
+  HermesEcrRepoName:
+    Description: ECR Repository name for hermes
     Type: String
-    Default: "1st/base"
-  ECR2ndRepoName:
-    Description: ECR Repository name for 2nd
+    Default: "nlp/hermes"
+  CaduceusEcrRepoName:
+    Description: ECR Repository name for caduceus
     Type: String
-    Default: "2nd/base"
-  1stImageTag:
-    Description: Image tag for 1st
+    Default: "nlp/caduceus"
+  HermesImageTag:
+    Description: Image tag for hermes
     Type: String
-    Default: tf-cpu-base-test
-  2ndImageTag:
-    Description: Image tag for 2nd
+    Default: tf-cpu-base
+  CaduceusImageTag:
+    Description: Image tag for caduceus
     Type: String
-    Default: baseimage-test
-  1stBuildspec:
-    Description: Image tag for 2nd
+    Default: python-slim-base
+  HermesBuildspec:
+    Description: Image tag for caduceus
     Type: String
-    Default: 1st.buildspec.yaml
-  2ndBuildspec:
-    Description: Image tag for 2nd
+    Default: hermes.buildspec.yaml
+  CaduceusBuildspec:
+    Description: Image tag for caduceus
     Type: String
-    Default: 2nd.buildspec.yaml
+    Default: caduceus.buildspec.yaml
   AwsAccountID:
     Description: AWS Account ID
     Type: String
-    Default: '{{resolve:ssm:AwaAccountID}}'
+    Default: 772907539545
   S3ArtifactStore:
     Description: S3 location to storing artifact
     Type: String
-    Default: assetfiles
+    Default: gbt-stf-assetfiles
+  PipelineName:
+    Description: Name of CodePipline
+    Type: String
+    Default: BaseImageBuilder
+  CodeCommitRepoName:
+    Description: Name of CodeCommit repository
+    Type: String
+    Default: BaseImageBuilder
+  BuildProjectName1:
+    Description: Name of codebuild project
+    Type: String
+    Default: HermesBaseImage
+  BuildProjectName2:
+    Description: Name of codebuild project
+    Type: String
+    Default: CaduceusBaseImage
+  CodePipelineSNSTopicName:
+    Description: Name of sns topic
+    Type: String
+    Default: CodePipelineSNS
 
 Resources: 
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     DeletionPolicy: Delete
     Properties:
-      Name: 1stBaseImage
+      Name: HermesBaseImage
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: CODEPIPELINE
@@ -55,18 +75,18 @@ Resources:
           - Name: AWS_ACCOUNT_ID
             Value: !Ref AwsAccountID
           - Name: IMAGE_REPO_NAME
-            Value: !Ref ECR1StRepoName
+            Value: !Ref HermesEcrRepoName
           - Name: IMAGE_TAG
-            Value: !Ref 1stImageTag
+            Value: !Ref HermesImageTag
       Source:
         Type: CODEPIPELINE
-        BuildSpec: !Ref 1stBuildspec
+        BuildSpec: !Ref HermesBuildspec
 
   CodeBuildSeconds:
     Type: AWS::CodeBuild::Project
     DeletionPolicy: Delete
     Properties:
-      Name: 2ndBaseImage
+      Name: CaduceusBaseImage
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: CODEPIPELINE
@@ -81,19 +101,19 @@ Resources:
           - Name: AWS_ACCOUNT_ID
             Value: !Ref AwsAccountID
           - Name: IMAGE_REPO_NAME
-            Value: !Ref ECR2ndRepoName
+            Value: !Ref CaduceusEcrRepoName
           - Name: IMAGE_TAG
-            Value: !Ref 2ndImageTag
+            Value: !Ref CaduceusImageTag
       Source:
         Type: CODEPIPELINE
-        BuildSpec: !Ref 2ndBuildspec
+        BuildSpec: !Ref CaduceusBuildspec
 
 # https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-codepipeline-pipeline.html
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     DeletionPolicy: Delete
     Properties: 
-      Name: BaseImageBuilder
+      Name: !Ref PipelineName
       ArtifactStore: 
         Type: S3
         Location: !Ref S3ArtifactStore
@@ -111,12 +131,12 @@ Resources:
                 - Name: SourceBaseImage
               Configuration:
                 BranchName: main
-                RepositoryName: BaseImageBuilder
+                RepositoryName: !Ref CodeCommitRepoName
                 PollForSourceChanges: false
               RunOrder: 1
         - Name: Build
           Actions:
-            - Name: BuildBaseImage1st
+            - Name: BuildBaseImageHermes
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -127,7 +147,7 @@ Resources:
                 ProjectName: !Ref CodeBuildProject
               InputArtifacts:
                 - Name: SourceBaseImage
-            - Name: BuildBaseImage2nd
+            - Name: BuildBaseImageCaduceus
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -151,7 +171,7 @@ Resources:
         detail-type:
           - 'CodeCommit Repository State Change'
         resources: 
-          - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'BaseImageBuilder' ] ]
+          - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodeCommitRepoName ] ]
         detail:
           event:
             - referenceCreated
@@ -163,325 +183,245 @@ Resources:
       Targets:
         -
           Arn: 
-            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'BaseImageBuilder' ] ]
+            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
           RoleArn: !GetAtt CloudWatchEventRole.Arn
-          Id: BaseImageBuilder
+          Id: !Ref PipelineName
 
   EventSchedule:
     Type: AWS::Events::Rule
     DeletionPolicy: Delete
     Properties:
       Name: "WeeklyEventSchedule"
-      Description: "Build once a week on Monday random time ~ 7-10 "
-      ScheduleExpression: "cron(0 3 ? * 1 *)"
+      Description: "Build once a week on Monday random time ~ 8-10 AM  "
+      ScheduleExpression: "cron(0 1-5 ? * MON *)"
       Targets:
         -
           Arn: 
-            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'BaseImageBuilder' ] ]
+            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
           RoleArn: !GetAtt CloudWatchEventRole.Arn
-          Id: BaseImageBuilder
+          Id: !Ref PipelineName
 
   CloudWatchEventRole:
     Type: 'AWS::IAM::Role'
     DeletionPolicy: Delete
     Properties:
       Description: "Cloudwatch event service role for trigger codepipeline "
-      AssumeRolePolicyDocument: |
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "events.amazonaws.com"
-              },
-              "Action": "sts:AssumeRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sts:AssumeRole'
+            Principal: {
+              Service: ["events.amazonaws.com"]
             }
-          ]
-        }
       Path: "/"
       RoleName: "cloudwatch-event-service-role"
       Policies:
-        - PolicyName: codebuild-service-role-policy
-          PolicyDocument: |
-            {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Sid": "VisualEditor0",
-                      "Effect": "Allow",
-                      "Action": "codepipeline:StartPipelineExecution",
-                      "Resource": "arn:aws:codepipeline:us-east-1:{{ !Ref AwsAccountID }}:BaseImageBuilder"
-                  }
-              ]
-            }
+        - PolicyName: cloudwatch-event-role-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Sid: "StartExecuteCodepipeline"
+                Action:
+                  - 'codepipeline:StartPipelineExecution'
+                Resource:
+                  !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
       Tags:
-        - Key: "env"
-          Value: "learning"
+        - Key: "owned"
+          Value: "GBT"
 
   CodeBuildRole:
     Type: 'AWS::IAM::Role'
     DeletionPolicy: Delete
     Properties:
       Description: "codebuild service role"
-      AssumeRolePolicyDocument: |
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "codebuild.amazonaws.com"
-              },
-              "Action": "sts:AssumeRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sts:AssumeRole'
+            Principal: {
+              Service: ["codebuild.amazonaws.com"]
             }
-          ]
-        }
       Path: "/"
       RoleName: "codebuild-service-role"
       Policies:
         - PolicyName: codebuild-service-role-policy
-          PolicyDocument: |
-            {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Sid": "CloudWatchLogsPolicy",
-                  "Effect": "Allow",
-                  "Action": [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                  ],
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "codebuildPolicy",
-                  "Effect": "Allow",
-                  "Action": [
-                    "codebuild:GitPull"
-                  ],
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "S3GetObjectPolicy",
-                  "Effect": "Allow",
-                  "Action": [
-                    "s3:GetObject",
-                    "s3:GetObjectVersion"
-                  ],
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "S3PutObjectPolicy",
-                  "Effect": "Allow",
-                  "Action": [
-                    "s3:PutObject"
-                  ],
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "S3BucketIdentity",
-                  "Effect": "Allow",
-                  "Action": [
-                    "s3:GetBucketAcl",
-                    "s3:GetBucketLocation"
-                  ],
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "VisualEditor0",
-                  "Effect": "Allow",
-                  "Action": [
-                      "ecr:GetDownloadUrlForLayer",
-                      "ecr:BatchGetImage",
-                      "ecr:CompleteLayerUpload",
-                      "ecr:GetAuthorizationToken",
-                      "ecr:UploadLayerPart",
-                      "ecr:InitiateLayerUpload",
-                      "ecr:BatchCheckLayerAvailability",
-                      "ecr:PutImage"
-                  ],
-                  "Resource": "*"
-                }
-              ]
-            }
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: "CloudWatchLogsPolicy"
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: 
+                  - !Join [ '', [ 'arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Ref BuildProjectName1 , ':*' ] ]
+                  - !Join [ '', [ 'arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Ref BuildProjectName2 , ':*' ] ]
+              - Sid: "CodeCommitPolicy"
+                Effect: Allow
+                Action:
+                  - 'codecommit:GitPull'
+                Resource:
+                  - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodeCommitRepoName ] ]
+              - Sid: "S3Policy"
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:GetBucketAcl"
+                  - "s3:GetBucketLocation"
+                Resource:
+                  - !Join [ '', [ 'arn:aws:s3:', '::', !Ref S3ArtifactStore ] ]
+                  - !Join [ '', [ 'arn:aws:s3:', '::', !Ref S3ArtifactStore, '/', !Ref PipelineName , '/*'] ]
+              - Sid: "EcrWriteAccessPolicy"
+                Effect: Allow
+                Action:
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:BatchGetImage"
+                  - "ecr:CompleteLayerUpload"
+                  - "ecr:UploadLayerPart"
+                  - "ecr:InitiateLayerUpload"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:PutImage"
+                Resource:
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref HermesEcrRepoName ] ]
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref CaduceusEcrRepoName ] ]
+              - Sid: "EcrReadAccess"
+                Effect: Allow
+                Action:
+                  - "ecr:GetAuthorizationToken"
+                Resource: "*"
+          
       Tags:
-        - Key: "env"
-          Value: "learning"
+        - Key: "owned"
+          Value: "GBT"
 
   CodePipelineRole:
     Type: 'AWS::IAM::Role'
     DeletionPolicy: Delete
     Properties:
       Description: "CodePipeline service role"
-      AssumeRolePolicyDocument: |
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-              {
-                  "Effect": "Allow",
-                  "Principal": {
-                      "Service": "codepipeline.amazonaws.com"
-                  },
-                  "Action": "sts:AssumeRole"
-              }
-          ]
-        }
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sts:AssumeRole'
+            Principal: {
+              Service: ["codepipeline.amazonaws.com"]
+            }
       Path: "/"
       RoleName: "code-pipeline-service-role"
       Policies:
         - PolicyName: code-pipeline-service-role-policy
-          PolicyDocument: |
-            {
-              "Statement": [
-                  {
-                      "Action": [
-                          "iam:PassRole"
-                      ],
-                      "Resource": "*",
-                      "Effect": "Allow",
-                      "Condition": {
-                          "StringEqualsIfExists": {
-                              "iam:PassedToService": [
-                                  "cloudformation.amazonaws.com"
-                              ]
-                          }
-                      }
-                  },
-                  {
-                      "Action": [
-                          "codecommit:CancelUploadArchive",
-                          "codecommit:GetBranch",
-                          "codecommit:GetCommit",
-                          "codecommit:GetRepository",
-                          "codecommit:GetUploadArchiveStatus",
-                          "codecommit:UploadArchive"
-                      ],
-                      "Resource": "*",
-                      "Effect": "Allow"
-                  },
-                  {
-                      "Action": [
-                          "codestar-connections:UseConnection"
-                      ],
-                      "Resource": "*",
-                      "Effect": "Allow"
-                  },
-                  {
-                      "Action": [
-                          "cloudwatch:*",
-                          "s3:*",
-                          "sns:*",
-                          "cloudformation:*"
-                      ],
-                      "Resource": "*",
-                      "Effect": "Allow"
-                  },
-                  {
-                      "Sid": "CodeStarNotificationsReadWriteAccess",
-                      "Effect": "Allow",
-                      "Action": [
-                          "codestar-notifications:CreateNotificationRule",
-                          "codestar-notifications:DescribeNotificationRule",
-                          "codestar-notifications:UpdateNotificationRule",
-                          "codestar-notifications:DeleteNotificationRule",
-                          "codestar-notifications:Subscribe",
-                          "codestar-notifications:Unsubscribe"
-                      ],
-                      "Resource": "*"
-                  },
-                  {
-                      "Sid": "CodeStarNotificationsListAccess",
-                      "Effect": "Allow",
-                      "Action": [
-                          "codestar-notifications:ListNotificationRules",
-                          "codestar-notifications:ListTargets",
-                          "codestar-notifications:ListTagsforResource",
-                          "codestar-notifications:ListEventTypes"
-                      ],
-                      "Resource": "*"
-                  },
-                  {
-                      "Action": [
-                          "codebuild:BatchGetBuilds",
-                          "codebuild:StartBuild",
-                          "codebuild:BatchGetBuildBatches",
-                          "codebuild:StartBuildBatch"
-                      ],
-                      "Resource": "*",
-                      "Effect": "Allow"
-                  },
-                  {
-                      "Effect": "Allow",
-                      "Action": [
-                          "ecr:DescribeImages"
-                      ],
-                      "Resource": "*"
-                  },
-                  {
-                      "Effect": "Allow",
-                      "Action": [
-                          "states:DescribeExecution",
-                          "states:DescribeStateMachine",
-                          "states:StartExecution"
-                      ],
-                      "Resource": "*"
-                  }
-              ],
-              "Version": "2012-10-17"
-            }
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: "CloudWatchLogsPolicy"
+                Effect: Allow
+                Action:
+                  - "codecommit:CancelUploadArchive"
+                  - "codecommit:GetBranch"
+                  - "codecommit:GetCommit"
+                  - "codecommit:GetRepository"
+                  - "codecommit:GetUploadArchiveStatus"
+                  - "codecommit:UploadArchive"
+                Resource: 
+                  - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodeCommitRepoName ] ]
+              - Sid: "Codestar"
+                Effect: Allow
+                Action:
+                  - "codestar-notifications:CreateNotificationRule"
+                  - "codestar-notifications:DescribeNotificationRule"
+                  - "codestar-notifications:UpdateNotificationRule"
+                  - "codestar-notifications:DeleteNotificationRule"
+                  - "codestar-notifications:Subscribe"
+                  - "codestar-notifications:Unsubscribe"
+                  - "codestar-notifications:ListNotificationRules"
+                  - "codestar-notifications:ListTargets"
+                  - "codestar-notifications:ListTagsforResource"
+                  - "codestar-notifications:ListEventTypes"
+                Resource: !GetAtt NotificationCodePipeline.Arn
+              - Sid: "CodeBuildPolicy"
+                Effect: Allow
+                Action:
+                  - "codebuild:BatchGetBuilds"
+                  - "codebuild:StartBuild"
+                  - "codebuild:BatchGetBuildBatches"
+                  - "codebuild:StartBuildBatch"
+                Resource: 
+                  - !GetAtt CodeBuildProject.Arn
+                  - !GetAtt CodeBuildSeconds.Arn
+                  # - !Join [ '', [ 'arn:aws:codebuild:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':project/', !Ref BuildProjectName1 ] ]
+                  # - !Join [ '', [ 'arn:aws:codebuild:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':project/', !Ref BuildProjectName2 ] ]
+              - Sid: "EcrAccessPolicy"
+                Effect: Allow
+                Action:
+                  - "ecr:DescribeImages"
+                Resource:
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref HermesEcrRepoName ] ]
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref CaduceusEcrRepoName ] ]
+              - Sid: "S3Policy"
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                  - "s3:GetBucketAcl"
+                  - "s3:GetBucketLocation"
+                Resource:
+                  - !Join [ '', [ 'arn:aws:s3:', '::', !Ref S3ArtifactStore ] ]
+                  - !Join [ '', [ 'arn:aws:s3:', '::', !Ref S3ArtifactStore, '/', !Ref PipelineName , '/*'] ]
+              - Sid: "SnsPolicy"
+                Effect: Allow
+                Action:
+                  - "sns:Publish"
+                Resource:
+                  !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNSTopicName ] ]
       Tags:
-        - Key: "env"
-          Value: "learning"
+        - Key: "owned"
+          Value: "GBT"
 
   # https://docs.aws.amazon.com/dtconsole/latest/userguide/concepts.html#events-ref-pipeline
   NotificationCodePipeline:
     Type: 'AWS::CodeStarNotifications::NotificationRule'
     DeletionPolicy: Delete
     Properties:
-      Name: 'Notification Rule for stages result'
+      Name: 'BaseImageBuilder pipeline result notification'
       DetailType: FULL
       Resource:
-        !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'BaseImageBuilder' ] ]
+        !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
       EventTypeIds: 
           - codepipeline-pipeline-pipeline-execution-failed
           - codepipeline-pipeline-pipeline-execution-succeeded
       Targets: 
           - TargetType: SNS 
             TargetAddress: 
-              !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'CodePipelineSNS' ] ]
+              !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNSTopicName ] ]
       Tags: 
-            env: learning
+            Owned: GBT
 
   CodePipleineSNSPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties: 
-      # PolicyDocument:
-      #   Version: "2012-10-17"
-      #   Statement:
-      #     - Effect: Allow
-      #       Action:
-      #         - 'SNS:Publish'
-      #       Principal:
-      #         - "Service": "codestar-notifications.amazonaws.com"
-      #       Resource:
-      #         !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', 'CodePipelineSNS' ] ]
-      PolicyDocument: |
-        {
-          "Version": "2008-10-17",
-          "Statement": [
-            {
-              "Sid": "CodeNotification_publish",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "codestar-notifications.amazonaws.com"
-              },
-              "Action": "SNS:Publish",
-              "Resource": "arn:aws:sns:us-east-1:{{ !Ref AwsAccountID }}:CodePipelineSNS"
+      PolicyDocument:
+        Version: "2008-10-17"
+        Statement:
+          - Sid: "CodePiplineNotificationPublish"
+            Effect: Allow
+            Action:
+              - "SNS:Publish"
+            Principal: {
+              Service: ["codestar-notifications.amazonaws.com"]
             }
-          ]
-        }
+            Resource: 
+              - !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNS ] ]
       Topics: 
         - !Ref CodePipelineSNS
 
@@ -489,17 +429,34 @@ Resources:
     Type: AWS::SNS::Topic
     DeletionPolicy: Delete
     Properties:
-      DisplayName: "CodePipelineSNS"
+      DisplayName: !Ref CodePipelineSNSTopicName
       Subscription:
-        - Endpoint: focuszaaphoto@gmail.com
+        - Endpoint: nirut.phengjaiwong@amexgbt.com
           Protocol: "email"
-      TopicName: "CodePipelineSNS"
+      TopicName: !Ref CodePipelineSNSTopicName
 
-# Outputs:
-#   BackupLoadBalancerDNSName:
-#     Description: The DNSName of the backup load balancer
-#     Value: !GetAtt BackupLoadBalancer.DNSName
-#     Condition: CreateProdResources
-#   InstanceID:
-#     Description: The Instance ID
-#     Value: !Ref EC2Instance
+Outputs:
+  CodePiplineArn:
+    Description: CodePipeline 
+    Value: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:!Ref PipelineName'
+  SNSTopicName:
+    Description: SNS 
+    Value: !GetAtt CodePipelineSNS.TopicName
+  CodeStartNotificationRuleArn:
+    Description: CodeStar Notification 
+    Value: !GetAtt NotificationCodePipeline.Arn
+  CodePiplineRoleArn:
+    Description: CodePipeline Role
+    Value: !GetAtt CodePipelineRole.Arn
+  CodeBuildRoleArn:
+    Description: CodeBuildRole Role
+    Value: !GetAtt CodeBuildRole.Arn
+  CloudWatchEventRoleArn:
+    Description: CloudWatchEventRole Role
+    Value: !GetAtt CloudWatchEventRole.Arn
+  CodeBuildProjectArn:
+    Description: CodeBuild 
+    Value: !GetAtt CodeBuildProject.Arn
+  CodeBuildSecondsArn:
+    Description: CodeBuild 
+    Value: !GetAtt CodeBuildProject.Arn
