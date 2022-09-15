@@ -1,7 +1,6 @@
 
-# Welcome to your CDK Python project!
+# Creating CodePieline by using CDK Python 
 
-This is a blank project for CDK development with Python.
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
@@ -55,4 +54,3 @@ command.
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
 
-Enjoy!
