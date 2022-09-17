@@ -5,13 +5,14 @@ from aws_cdk import (
     App, CfnOutput, Stack
 )
 
+
 class Pipeline(Stack):
     def __init__(self, app: App, id: str, props, **kwargs) -> None:
         super().__init__(app, id, **kwargs)
-        
+
         # defind s3 artifact
         source_output = aws_codepipeline.Artifact(artifact_name='source')
-        
+
         pipeline = aws_codepipeline.Pipeline(
             self, "Pipeline",
             pipeline_name=f"{props['namespace']}",
@@ -19,17 +20,16 @@ class Pipeline(Stack):
             artifact_bucket=props['bucket'],
             stages=[
                 aws_codepipeline.StageProps(
-                  stage_name="Source",
-                  actions=[
-                      aws_codepipeline_actions.S3SourceAction(
-                          bucket=props['bucket'],
-                          bucket_key='source.zip',
-                          action_name='S3Source',
-                          run_order=1,
-                          output=source_output,
-                          trigger=aws_codepipeline_actions.S3Trigger.POLL
-                      ),
-                  ]
+                  stage_name='source',
+                    actions=[
+                        aws_codepipeline_actions.CodeCommitSourceAction(
+                            action_name="Source",
+                            repository=props['cc_repo'],
+                            branch= "main",
+                            output=source_output,
+                            trigger=aws_codepipeline_actions.CodeCommitTrigger.POLL
+                        )
+                    ]
                 ),
                 aws_codepipeline.StageProps(
                     stage_name='Build',
@@ -39,14 +39,47 @@ class Pipeline(Stack):
                             input=source_output,
                             project=props['CodeBuildDocker'],
                             run_order=1,
+                        ),
+                        aws_codepipeline_actions.CodeBuildAction(
+                            action_name='DockerBuildImage1',
+                            input=source_output,
+                            project=props['CodeBuildDocker1'],
+                            run_order=2,
                         )
                     ]
                 )
             ]
+            # stages=[
+            #     aws_codepipeline.StageProps(
+            #       stage_name="Source",
+            #       actions=[
+            #           aws_codepipeline_actions.S3SourceAction(
+            #               bucket=props['bucket'],
+            #               bucket_key='source.zip',
+            #               action_name='S3Source',
+            #               run_order=1,
+            #               output=source_output,
+            #               trigger=aws_codepipeline_actions.S3Trigger.POLL
+            #           ),
+            #       ]
+            #     ),
+            #     aws_codepipeline.StageProps(
+            #         stage_name='Build',
+            #         actions=[
+            #             aws_codepipeline_actions.CodeBuildAction(
+            #                 action_name='DockerBuildImage',
+            #                 input=source_output,
+            #                 project=props['CodeBuildDocker'],
+            #                 run_order=1,
+            #             )
+            #         ]
+            #     )
+            # ]
         )
 
         # grant access s3 for codepipline
         props['bucket'].grant_read_write(pipeline.role)
+        props['cc_repo'].grant_pull_push(pipeline.role)
 
         # pipeline param to get
         pipeline_param = aws_ssm.StringParameter(

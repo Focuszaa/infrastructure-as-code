@@ -1,16 +1,25 @@
+from distutils.command.build_scripts import first_line_re
+from pydoc import describe
 from aws_cdk import (
     aws_s3 as aws_s3,
     aws_ecr,
     aws_codebuild,
     aws_ssm,
+    aws_codecommit,
     App, Aws, CfnOutput, Duration, RemovalPolicy, Stack
 )
-
 
 class Base(Stack):
     def __init__(self, app: App, id: str, props, **kwargs) -> None:
         super().__init__(app, id, **kwargs)
 
+        # codeCommit repo
+        cc_repo = aws_codecommit.Repository(
+          self, "codecommit",
+          repository_name="cdk-cp",
+          description="cdk codepipeline"
+        )
+        
         ArtifactBuket = aws_s3.Bucket(
             self, "artifact-bucket",
             bucket_name=f"{props['namespace'].lower()}-{Aws.ACCOUNT_ID}",
@@ -31,6 +40,27 @@ class Base(Stack):
             repository_name=f"{props['namespace']}",
             removal_policy=RemovalPolicy.DESTROY)
 
+        # codeBuild project for running in codePipeline.
+        CodeBuildDocker1 = aws_codebuild.PipelineProject(
+          self, "codebuild-project-1",
+          build_spec=aws_codebuild.BuildSpec.from_source_filename(
+            filename='buildspec1.yaml'),
+          description="codebuild-1",
+          environment=aws_codebuild.BuildEnvironment(
+            privileged=True,
+            compute_type=aws_codebuild.ComputeType.SMALL,
+            environment_variables={
+              'ecr': aws_codebuild.BuildEnvironmentVariable(
+                value=EcrRepo.repository_uri
+              ),
+              'tag': aws_codebuild.BuildEnvironmentVariable(
+                value='cdk'
+              )
+            }
+          ),
+          timeout=Duration.minutes(10),
+        )
+        
         # codeBuild project for running in code pipeline.
         CodeBuildDocker = aws_codebuild.PipelineProject(
             self, "codebuid-project",
@@ -72,6 +102,9 @@ class Base(Stack):
         self.output_props = props.copy()
         self.output_props['bucket'] = ArtifactBuket
         self.output_props['CodeBuildDocker'] = CodeBuildDocker
+        self.output_props['CodeBuildDocker1'] = CodeBuildDocker1
+        self.output_props['cc_repo'] = cc_repo
+        
 
     # Pass object to another stack
     @property
