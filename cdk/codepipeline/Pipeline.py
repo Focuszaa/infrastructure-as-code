@@ -49,32 +49,6 @@ class Pipeline(Stack):
                     ]
                 )
             ]
-            # stages=[
-            #     aws_codepipeline.StageProps(
-            #       stage_name="Source",
-            #       actions=[
-            #           aws_codepipeline_actions.S3SourceAction(
-            #               bucket=props['bucket'],
-            #               bucket_key='source.zip',
-            #               action_name='S3Source',
-            #               run_order=1,
-            #               output=source_output,
-            #               trigger=aws_codepipeline_actions.S3Trigger.POLL
-            #           ),
-            #       ]
-            #     ),
-            #     aws_codepipeline.StageProps(
-            #         stage_name='Build',
-            #         actions=[
-            #             aws_codepipeline_actions.CodeBuildAction(
-            #                 action_name='DockerBuildImage',
-            #                 input=source_output,
-            #                 project=props['CodeBuildDocker'],
-            #                 run_order=1,
-            #             )
-            #         ]
-            #     )
-            # ]
         )
 
         # grant access s3 for codepipline
