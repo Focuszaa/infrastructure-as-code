@@ -15,7 +15,7 @@ class Pipeline(Stack):
 
         pipeline = aws_codepipeline.Pipeline(
             self, "Pipeline",
-            pipeline_name=f"{props['namespace']}",
+            pipeline_name=f"{props['projectName']}",
             # pipeline_name='cdkPipeline',
             artifact_bucket=props['bucket'],
             stages=[
@@ -44,7 +44,7 @@ class Pipeline(Stack):
                             action_name='DockerBuildImage1',
                             input=source_output,
                             project=props['CodeBuildDocker1'],
-                            run_order=2,
+                            run_order=1,
                         )
                     ]
                 )
@@ -58,7 +58,7 @@ class Pipeline(Stack):
         # pipeline param to get
         pipeline_param = aws_ssm.StringParameter(
             self, "PipelineParam",
-            parameter_name=f"{props['namespace']}-pipeline",
+            parameter_name=f"{props['projectName']}-pipeline",
             string_value=pipeline.pipeline_name,
             description='cdk pipeline bucket'
         )

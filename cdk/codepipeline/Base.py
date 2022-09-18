@@ -17,12 +17,12 @@ class Base(Stack):
         cc_repo = aws_codecommit.Repository(
           self, "codecommit",
           repository_name="cdk-cp",
-          description="cdk codepipeline"
+          description="cdk codepipeline",
         )
         
         ArtifactBuket = aws_s3.Bucket(
             self, "artifact-bucket",
-            bucket_name=f"{props['namespace'].lower()}-{Aws.ACCOUNT_ID}",
+            bucket_name=f"{props['projectName'].lower()}-{Aws.ACCOUNT_ID}",
             versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
             block_public_access=aws_s3.BlockPublicAccess.BLOCK_ALL)
@@ -30,14 +30,14 @@ class Base(Stack):
         # ssm parameter to get bucket name later
         bucket_param = aws_ssm.StringParameter(
             self, "ParameterB",
-            parameter_name=f"{props['namespace']}-bucket",
+            parameter_name=f"{props['projectName']}-bucket",
             string_value=ArtifactBuket.bucket_name,
-            description='cdk pipeline bucket'
+            description='parameter store bucket name',            
         )
 
         EcrRepo = aws_ecr.Repository(
             self, "EcrRepo",
-            repository_name=f"{props['namespace']}",
+            repository_name=f"{props['projectName'].lower()}",
             removal_policy=RemovalPolicy.DESTROY)
 
         # codeBuild project for running in codePipeline.
@@ -64,7 +64,7 @@ class Base(Stack):
         # codeBuild project for running in code pipeline.
         CodeBuildDocker = aws_codebuild.PipelineProject(
             self, "codebuid-project",
-            project_name=f"{props['namespace']}-Docker-build",
+            project_name=f"{props['projectName']}-Docker-build",
             build_spec=aws_codebuild.BuildSpec.from_source_filename(
                 filename='buildspec.yaml'),
             environment=aws_codebuild.BuildEnvironment(
@@ -78,7 +78,7 @@ class Base(Stack):
                     value='cdk'
                 )
             },
-            description="build image",
+            description="codebuild-2",
             timeout=Duration.minutes(10),
         )
 
