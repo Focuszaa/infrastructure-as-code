@@ -69,3 +69,11 @@ class Pipeline(Stack):
             description="Pipeline",
             value=pipeline.pipeline_name
         )
+        
+        self.output_props = props.copy()
+        self.output_props['cp'] = pipeline
+
+    # Pass object to another stack
+    @property
+    def outputs(self):
+        return self.output_props
