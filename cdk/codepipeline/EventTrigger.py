@@ -27,16 +27,8 @@ class EventTrigger(Stack):
             }
         )
         
-        # cw_event_service_role.add_to_policy(
-        #   statement=iam.PolicyStatement(
-        #     actions=['codepipeline:StartPipelineExecution'],
-        #     effect=iam.Effect.ALLOW,
-        #     sid="StartExecuteCodepipeline",
-        #     resources=[props['cp'].pipeline_arn]
-        #   )
-        # )
-        
-        rule =ev.Rule(self, "rule",
+        # cc means codecommit
+        cc_change_rule =ev.Rule(self, "cc_change_rule",
             event_pattern=ev.EventPattern(
               source=["aws.codecommit"],
               detail_type=['CodeCommit Repository State Change'],
@@ -49,7 +41,21 @@ class EventTrigger(Stack):
             )
         )
         
-        rule.add_target(targets.CodePipeline(
+        cc_change_rule.add_target(targets.CodePipeline(
+          props['cp'],
+          event_role=cw_event_service_role,
+          retry_attempts=2
+        ))
+        
+        # cw means codewatch
+        cw_schedule_weekly_rule =ev.Rule(
+          self, "cw_schedule_weekly_rule",
+          rule_name='WeeklyEventSchedule',
+          description='Build once a week on Monday random time ~ 8-10 AM',
+          schedule=ev.Schedule.expression("cron(0 1-5 ? * MON *)")
+        )
+        
+        cw_schedule_weekly_rule.add_target(targets.CodePipeline(
           props['cp'],
           event_role=cw_event_service_role,
           retry_attempts=2
