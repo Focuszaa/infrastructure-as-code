@@ -3,8 +3,8 @@
 This project are having both Cloudformation template and CDK (cloud development kit) using Python. 
 
 ## Sub project list.
-## Cloudformation 
+### Cloudformation 
 - Project: CfnBaseImageBuilder, Status: 🟢 Available. cfn BaseImageBuilder Use priodically build base image for update vulnerability then use it later when build an application - the cfn provision CodePipeline with 2 stages, sources and build docker images push to ECR, there is cloudwatch event for schedule execute a pipeline as weekly, notification on codestar to notice fail/success using SNS. also having an cloudwatch event rule to execute pipeline when there is change on main branch of codecommit. 
 
-## Cdk
+### Cdk
 - Project: CdkBaseImageBuilder, Status: 🟡 InProgress. CDK BaseImageBuilder Use priodically build base image for update vulnerability then use it later when build an application - the CDK provision CodePipeline with 2 stages, sources and build docker images push to ECR, there is cloudwatch event for schedule execute a pipeline as weekly, notification on codestar to notice fail/success using SNS. also having an cloudwatch event rule to execute pipeline when there is change on main branch of codecommit. 
