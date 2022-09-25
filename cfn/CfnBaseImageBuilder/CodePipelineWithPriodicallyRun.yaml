@@ -2,30 +2,18 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Pipeline for priodically build base image
 
 Parameters:
-  HermesEcrRepoName:
-    Description: ECR Repository name for hermes
+  EcrRepoName:
+    Description: ECR Repository name for ProjectBaseImage
     Type: String
-    Default: "nlp/hermes"
-  CaduceusEcrRepoName:
-    Description: ECR Repository name for caduceus
+    Default: "baseimage/seconds"
+  ImageTag:
+    Description: Image tag for ProjectBaseImage
     Type: String
-    Default: "nlp/caduceus"
-  HermesImageTag:
-    Description: Image tag for hermes
+    Default: tagimage
+  Buildspec:
+    Description: Image tag for ProjectBaseImage
     Type: String
-    Default: tf-cpu-base
-  CaduceusImageTag:
-    Description: Image tag for caduceus
-    Type: String
-    Default: python-slim-base
-  HermesBuildspec:
-    Description: Image tag for caduceus
-    Type: String
-    Default: hermes.buildspec.yaml
-  CaduceusBuildspec:
-    Description: Image tag for caduceus
-    Type: String
-    Default: caduceus.buildspec.yaml
+    Default: buildspec-2st.yaml
   AwsAccountID:
     Description: AWS Account ID
     Type: String
@@ -33,7 +21,7 @@ Parameters:
   S3ArtifactStore:
     Description: S3 location to storing artifact
     Type: String
-    Default: gbt-stf-assetfiles
+    Default: sorcecode
   PipelineName:
     Description: Name of CodePipline
     Type: String
@@ -42,25 +30,25 @@ Parameters:
     Description: Name of CodeCommit repository
     Type: String
     Default: BaseImageBuilder
-  BuildProjectName1:
+  CodeBuildProjectName:
     Description: Name of codebuild project
     Type: String
-    Default: HermesBaseImage
-  BuildProjectName2:
-    Description: Name of codebuild project
-    Type: String
-    Default: CaduceusBaseImage
+    Default: ProjectBaseImage
   CodePipelineSNSTopicName:
     Description: Name of sns topic
     Type: String
     Default: CodePipelineSNS
+  EmailNotification:
+    Description: Emails for notification
+    Type: String
+    Default: focuszaaphoto@gmail.com
 
-Resources: 
+Resources:
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     DeletionPolicy: Delete
     Properties:
-      Name: HermesBaseImage
+      Name: !Ref CodeBuildProjectName
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: CODEPIPELINE
@@ -75,163 +63,13 @@ Resources:
           - Name: AWS_ACCOUNT_ID
             Value: !Ref AwsAccountID
           - Name: IMAGE_REPO_NAME
-            Value: !Ref HermesEcrRepoName
+            Value: !Ref EcrRepoName
           - Name: IMAGE_TAG
-            Value: !Ref HermesImageTag
+            Value: !Ref ImageTag
       Source:
         Type: CODEPIPELINE
-        BuildSpec: !Ref HermesBuildspec
-
-  CodeBuildSeconds:
-    Type: AWS::CodeBuild::Project
-    DeletionPolicy: Delete
-    Properties:
-      Name: CaduceusBaseImage
-      ServiceRole: !GetAtt CodeBuildRole.Arn
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:2.0
-        PrivilegedMode: true
-        EnvironmentVariables:
-          - Name: AWS_DEFAULT_REGION
-            Value: us-east-1
-          - Name: AWS_ACCOUNT_ID
-            Value: !Ref AwsAccountID
-          - Name: IMAGE_REPO_NAME
-            Value: !Ref CaduceusEcrRepoName
-          - Name: IMAGE_TAG
-            Value: !Ref CaduceusImageTag
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: !Ref CaduceusBuildspec
-
-# https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-codepipeline-pipeline.html
-  CodePipeline:
-    Type: AWS::CodePipeline::Pipeline
-    DeletionPolicy: Delete
-    Properties: 
-      Name: !Ref PipelineName
-      ArtifactStore: 
-        Type: S3
-        Location: !Ref S3ArtifactStore
-      RoleArn: !GetAtt CodePipelineRole.Arn
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: SourceAction
-              ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Version: 1
-                Provider: CodeCommit
-              OutputArtifacts:
-                - Name: SourceBaseImage
-              Configuration:
-                BranchName: main
-                RepositoryName: !Ref CodeCommitRepoName
-                PollForSourceChanges: false
-              RunOrder: 1
-        - Name: Build
-          Actions:
-            - Name: BuildBaseImageHermes
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: '1'
-              RunOrder: 1
-              Configuration:
-                ProjectName: !Ref CodeBuildProject
-              InputArtifacts:
-                - Name: SourceBaseImage
-            - Name: BuildBaseImageCaduceus
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: '1'
-              RunOrder: 1
-              Configuration:
-                ProjectName: !Ref CodeBuildSeconds
-              InputArtifacts:
-                - Name: SourceBaseImage
-
-  CodeCommitEventRule:
-    Type: AWS::Events::Rule
-    DeletionPolicy: Delete
-    Properties:
-      Name: "EventOnCodeCommit"
-      Description: "Start trigger when there is a change on main branch"
-      EventPattern:
-        source:
-          - aws.codecommit
-        detail-type:
-          - 'CodeCommit Repository State Change'
-        resources: 
-          - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodeCommitRepoName ] ]
-        detail:
-          event:
-            - referenceCreated
-            - referenceUpdated
-          referenceType:
-            - branch
-          referenceName:
-            - main
-      Targets:
-        -
-          Arn: 
-            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
-          RoleArn: !GetAtt CloudWatchEventRole.Arn
-          Id: !Ref PipelineName
-
-  EventSchedule:
-    Type: AWS::Events::Rule
-    DeletionPolicy: Delete
-    Properties:
-      Name: "WeeklyEventSchedule"
-      Description: "Build once a week on Monday random time ~ 8-10 AM  "
-      ScheduleExpression: "cron(0 1-5 ? * MON *)"
-      Targets:
-        -
-          Arn: 
-            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
-          RoleArn: !GetAtt CloudWatchEventRole.Arn
-          Id: !Ref PipelineName
-
-  CloudWatchEventRole:
-    Type: 'AWS::IAM::Role'
-    DeletionPolicy: Delete
-    Properties:
-      Description: "Cloudwatch event service role for trigger codepipeline "
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - 'sts:AssumeRole'
-            Principal: {
-              Service: ["events.amazonaws.com"]
-            }
-      Path: "/"
-      RoleName: "cloudwatch-event-service-role"
-      Policies:
-        - PolicyName: cloudwatch-event-role-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Sid: "StartExecuteCodepipeline"
-                Action:
-                  - 'codepipeline:StartPipelineExecution'
-                Resource:
-                  !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
-      Tags:
-        - Key: "owned"
-          Value: "GBT"
-
+        BuildSpec: !Ref Buildspec
+  
   CodeBuildRole:
     Type: 'AWS::IAM::Role'
     DeletionPolicy: Delete
@@ -260,8 +98,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource: 
-                  - !Join [ '', [ 'arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Ref BuildProjectName1 , ':*' ] ]
-                  - !Join [ '', [ 'arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Ref BuildProjectName2 , ':*' ] ]
+                  - !Join [ '', [ 'arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Ref CodeBuildProjectName , ':*' ] ]
               - Sid: "CodeCommitPolicy"
                 Effect: Allow
                 Action:
@@ -290,18 +127,51 @@ Resources:
                   - "ecr:BatchCheckLayerAvailability"
                   - "ecr:PutImage"
                 Resource:
-                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref HermesEcrRepoName ] ]
-                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref CaduceusEcrRepoName ] ]
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref EcrRepoName ] ]
+                  
               - Sid: "EcrReadAccess"
                 Effect: Allow
                 Action:
                   - "ecr:GetAuthorizationToken"
                 Resource: "*"
-          
-      Tags:
-        - Key: "owned"
-          Value: "GBT"
-
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DeletionPolicy: Delete
+    Properties: 
+      Name: !Ref PipelineName
+      ArtifactStore: 
+        Type: S3
+        Location: !Ref S3ArtifactStore
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              OutputArtifacts:
+                - Name: SourceBaseImage
+              Configuration:
+                BranchName: main
+                RepositoryName: !Ref CodeCommitRepoName
+                PollForSourceChanges: false
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildBaseImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              RunOrder: 1
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceBaseImage
   CodePipelineRole:
     Type: 'AWS::IAM::Role'
     DeletionPolicy: Delete
@@ -357,16 +227,12 @@ Resources:
                   - "codebuild:StartBuildBatch"
                 Resource: 
                   - !GetAtt CodeBuildProject.Arn
-                  - !GetAtt CodeBuildSeconds.Arn
-                  # - !Join [ '', [ 'arn:aws:codebuild:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':project/', !Ref BuildProjectName1 ] ]
-                  # - !Join [ '', [ 'arn:aws:codebuild:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':project/', !Ref BuildProjectName2 ] ]
               - Sid: "EcrAccessPolicy"
                 Effect: Allow
                 Action:
                   - "ecr:DescribeImages"
                 Resource:
-                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref HermesEcrRepoName ] ]
-                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref CaduceusEcrRepoName ] ]
+                  - !Join [ '', [ 'arn:aws:ecr:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':repository/', !Ref EcrRepoName ] ]
               - Sid: "S3Policy"
                 Effect: Allow
                 Action:
@@ -384,11 +250,7 @@ Resources:
                   - "sns:Publish"
                 Resource:
                   !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNSTopicName ] ]
-      Tags:
-        - Key: "owned"
-          Value: "GBT"
 
-  # https://docs.aws.amazon.com/dtconsole/latest/userguide/concepts.html#events-ref-pipeline
   NotificationCodePipeline:
     Type: 'AWS::CodeStarNotifications::NotificationRule'
     DeletionPolicy: Delete
@@ -404,8 +266,6 @@ Resources:
           - TargetType: SNS 
             TargetAddress: 
               !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNSTopicName ] ]
-      Tags: 
-            Owned: GBT
 
   CodePipleineSNSPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -424,17 +284,86 @@ Resources:
               - !Join [ '', [ 'arn:aws:sns:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodePipelineSNS ] ]
       Topics: 
         - !Ref CodePipelineSNS
-
+  
   CodePipelineSNS:
     Type: AWS::SNS::Topic
     DeletionPolicy: Delete
     Properties:
       DisplayName: !Ref CodePipelineSNSTopicName
       Subscription:
-        - Endpoint: nirut.phengjaiwong@amexgbt.com
+        - Endpoint: !Ref EmailNotification
           Protocol: "email"
       TopicName: !Ref CodePipelineSNSTopicName
-
+  
+  CodeCommitEventRule:
+    Type: AWS::Events::Rule
+    DeletionPolicy: Delete
+    Properties:
+      Name: "EventOnCodeCommit"
+      Description: "Start trigger when there is a change on main branch"
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - 'CodeCommit Repository State Change'
+        resources: 
+          - !Join [ '', [ 'arn:aws:codecommit:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref CodeCommitRepoName ] ]
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - main
+      Targets:
+        -
+          Arn: 
+            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
+          RoleArn: !GetAtt CloudWatchEventRole.Arn
+          Id: !Ref PipelineName
+  
+  EventSchedule:
+    Type: AWS::Events::Rule
+    DeletionPolicy: Delete
+    Properties:
+      Name: "WeeklyEventSchedule"
+      Description: "Build once a week on Monday random time ~ 8-10 AM  "
+      ScheduleExpression: "cron(0 1-5 ? * MON *)"
+      Targets:
+        -
+          Arn: 
+            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
+          RoleArn: !GetAtt CloudWatchEventRole.Arn
+          Id: !Ref PipelineName
+  
+  CloudWatchEventRole:
+    Type: 'AWS::IAM::Role'
+    DeletionPolicy: Delete
+    Properties:
+      Description: "Cloudwatch event service role for trigger codepipeline "
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sts:AssumeRole'
+            Principal: {
+              Service: ["events.amazonaws.com"]
+            }
+      Path: "/"
+      RoleName: "cloudwatch-event-service-role"
+      Policies:
+        - PolicyName: cloudwatch-event-role-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Sid: "StartExecuteCodepipeline"
+                Action:
+                  - 'codepipeline:StartPipelineExecution'
+                Resource:
+                  !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref PipelineName ] ]
 Outputs:
   CodePiplineArn:
     Description: CodePipeline 
@@ -455,8 +384,5 @@ Outputs:
     Description: CloudWatchEventRole Role
     Value: !GetAtt CloudWatchEventRole.Arn
   CodeBuildProjectArn:
-    Description: CodeBuild 
-    Value: !GetAtt CodeBuildProject.Arn
-  CodeBuildSecondsArn:
     Description: CodeBuild 
     Value: !GetAtt CodeBuildProject.Arn
