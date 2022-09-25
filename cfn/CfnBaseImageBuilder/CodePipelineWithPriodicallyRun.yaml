@@ -17,7 +17,7 @@ Parameters:
   AwsAccountID:
     Description: AWS Account ID
     Type: String
-    Default: 772907539545
+    Default: <Account-ID>
   S3ArtifactStore:
     Description: S3 location to storing artifact
     Type: String
