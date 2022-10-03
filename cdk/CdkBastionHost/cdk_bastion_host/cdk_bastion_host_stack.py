@@ -9,19 +9,13 @@ class CdkBastionHostStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        YOUR_VPC_ID="VPV ID"
-        SUBNET="Your subnet id"
+        VPC_ID="YOUR_VPC_ID"
         SECURITY_GROUP_NAME="sg-bastion"
         
         vpc = aws_ec2.Vpc.from_lookup(
           self,"lookup-vpc",
           is_default=True,
-          vpc_id=YOUR_VPC_ID
-        )
-        
-        subnet = aws_ec2.Subnet.from_subnet_id(
-          self, id = "subnet",
-          subnet_id= SUBNET
+          vpc_id=VPC_ID
         )
         
         sg = aws_ec2.SecurityGroup(
@@ -36,6 +30,8 @@ class CdkBastionHostStack(Stack):
           instance_name="CdkBastionHost",
           instance_type=aws_ec2.InstanceType.of(aws_ec2.InstanceClass.T3, aws_ec2.InstanceSize.MICRO),
           vpc=vpc,
-          subnet_selection= subnet,
+          subnet_selection= aws_ec2.SubnetSelection(
+              subnet_type=aws_ec2.SubnetType.PUBLIC
+          ),
           security_group=sg,
         )
